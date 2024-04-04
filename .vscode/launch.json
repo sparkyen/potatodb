@@ -69,7 +69,7 @@
           "build",
           "--bin=toysql",
           "--package=toydb",
-          "-c=${workspaceFolder}/config/toydb.yaml"
+          // "-c=${workspaceFolder}/config/toydb.yaml"
         ],
         "filter": {
           "name": "toysql",

@@ -8,6 +8,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt as _;
 
 /// A Raft-managed state machine.
+/// 在 raft.rs 中有实现
 pub trait State: Send {
     /// Returns the last applied index from the state machine.
     fn get_applied_index(&self) -> Index;
@@ -24,6 +25,7 @@ pub trait State: Send {
     fn apply(&mut self, entry: Entry) -> Result<Vec<u8>>;
 
     /// Queries the state machine. All errors are propagated to the caller.
+    /// propagated 是传播的意思
     fn query(&self, command: Vec<u8>) -> Result<Vec<u8>>;
 }
 
@@ -57,7 +59,9 @@ struct Query {
 /// Drives a state machine, taking operations from state_rx and sending results via node_tx.
 pub struct Driver {
     node_id: NodeID,
+    // receive
     state_rx: UnboundedReceiverStream<Instruction>,
+    // transfer
     node_tx: mpsc::UnboundedSender<Message>,
     /// Notify clients when their mutation is applied. <index, (client, id)>
     notify: HashMap<Index, (Address, Vec<u8>)>,
@@ -95,6 +99,7 @@ impl Driver {
     }
 
     /// Applies committed log entries to the state machine.
+    /// 在 new 一个 raft node 的时候会被调用
     pub fn apply_log(&mut self, state: &mut dyn State, log: &mut Log) -> Result<Index> {
         let applied_index = state.get_applied_index();
         let (commit_index, _) = log.get_commit_index();
@@ -136,6 +141,11 @@ impl Driver {
                 self.apply(state, entry)?;
             }
 
+            // leader 收到 Event::ClientRequest(Mutate类型) 后会回复 Instruction::Notify
+            // 流程大致为：
+            // Event::ClientRequest::Mutate->leader->leader 发起 propose 给自己和尝试给followers写日志
+            // ->Instruction::Notify->maybe_commit->Instruction::Apply->调用实际的 state.apply
+            // ->notify_applied->移除self.notify对应的内容并给 Client 回复
             Instruction::Notify { id, address, index } => {
                 if index > state.get_applied_index() {
                     self.notify.insert(index, (address, id));
@@ -144,6 +154,12 @@ impl Driver {
                 }
             }
 
+            // leader 收到 Event::ClientRequest(Query类型) 后会回复 Instruction::Query
+            // 流程大致为：
+            // Event::ClientRequest::Query->leader->Instruction::Query->Instruction::Vote->
+            // heartbeats->followers->Event::ConfirmLeader->leader->Instruction::Vote s
+            // 而这边收到 Instruction::Vote 后一旦满足条件就会触发实际的 state.query 并给 Client 返回结果
+            // 或者在执行 self.apply 的时候也会尝试执行 self.query_execute
             Instruction::Query { id, address, command, index, term, quorum } => {
                 self.queries.entry(index).or_default().insert(
                     id.clone(),
@@ -240,6 +256,7 @@ impl Driver {
 
     /// Votes for queries up to and including a given commit index for a term by an address.
     fn query_vote(&mut self, term: Term, commit_index: Index, address: Address) {
+        // 传递 Instruction::Query 消息的时候就会在 self.queries 进行 insert
         for (_, queries) in self.queries.range_mut(..=commit_index) {
             for (_, query) in queries.iter_mut() {
                 if term >= query.term {

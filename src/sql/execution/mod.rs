@@ -26,6 +26,9 @@ pub trait Executor<T: Transaction> {
     fn execute(self: Box<Self>, txn: &mut T) -> Result<ResultSet>;
 }
 
+// T 类型的实例必须满足 Transaction trait 中定义的所有方法和行为。
+// 通常情况下，当一个泛型函数或者结构体需要使用某个特定的 trait 来约束泛型类型时
+// 就会使用 trait bounds。这样做可以使得编译器在编译时检查泛型类型是否满足指定的约束条件。
 impl<T: Transaction + 'static> dyn Executor<T> {
     /// Builds an executor for a plan node, consuming it
     pub fn build(node: Node) -> Box<dyn Executor<T>> {

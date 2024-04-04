@@ -178,6 +178,7 @@ impl RawNode<Follower> {
                     debug!("Rejecting log entries at base {}", base_index);
                     self.send(msg.from, Event::RejectEntries)?
                 } else {
+                    // splice 是拼接的意思
                     let last_index = self.log.splice(entries)?;
                     self.send(msg.from, Event::AcceptEntries { last_index })?
                 }
@@ -306,6 +307,8 @@ pub mod tests {
         log.append(1, Some(vec![0x01]))?;
         log.append(1, Some(vec![0x02]))?;
         log.append(2, Some(vec![0x03]))?;
+        // add by XY 20240324
+        // log.append(2, Some(vec![0x04]))?;
         log.commit(2)?;
         log.set_term(3, None)?;
 
@@ -349,6 +352,41 @@ pub mod tests {
         );
         Ok(())
     }
+
+    // add by XY 20240324
+    // #[test]
+    // // Heartbeat from current leader should commit and apply muti entry
+    // fn step_heartbeat_muti() -> Result<()> {
+    //     let (follower, mut node_rx, mut state_rx) = setup()?;
+    //     let mut node = follower.step(Message {
+    //         from: Address::Node(2),
+    //         to: Address::Node(1),
+    //         term: 3,
+    //         event: Event::Heartbeat { commit_index: 4, commit_term: 2 },
+    //     })?;
+    //     assert_node(&mut node).is_follower().term(3).leader(Some(2)).voted_for(None).committed(4);
+    //     assert_messages(
+    //         &mut node_rx,
+    //         vec![Message {
+    //             from: Address::Node(1),
+    //             to: Address::Node(2),
+    //             term: 3,
+    //             event: Event::ConfirmLeader { commit_index: 4, has_committed: true },
+    //         }],
+    //     );
+    //     assert_messages(
+    //         &mut state_rx,
+    //         vec![
+    //             Instruction::Apply {
+    //                 entry: Entry { index: 3, term: 2, command: Some(vec![0x03]) },
+    //             },
+    //             Instruction::Apply {
+    //                 entry: Entry { index: 4, term: 2, command: Some(vec![0x04]) },
+    //             },
+    //         ],
+    //     );
+    //     Ok(())
+    // }
 
     #[test]
     // Heartbeat from current leader with conflicting commit_term
@@ -544,6 +582,7 @@ pub mod tests {
             event: Event::SolicitVote { last_index: 3, last_term: 2 },
         })?;
         assert_node(&mut node).is_follower().term(3).leader(Some(2)).voted_for(Some(3));
+        // try_recv对消息进行“消费”，意味着一旦某个消息被try_recv成功接收，它就从通道的队列中移除了。
         assert_messages(
             &mut node_rx,
             vec![Message {
@@ -707,6 +746,7 @@ pub mod tests {
 
     #[test]
     // AppendEntries accepts partially overlapping entries
+    // overlap 是重叠的意思
     fn step_appendentries_partial_overlap() -> Result<()> {
         let (follower, mut node_rx, mut state_rx) = setup()?;
         let mut node = follower.step(Message {
@@ -992,6 +1032,7 @@ pub mod tests {
             event: Event::Heartbeat { commit_index: 3, commit_term: 2 },
         })?;
         assert_node(&mut node).is_follower().term(4).leader(Some(3)).forwarded(vec![]);
+        // 由于leader换人了，这里首先调用了 abort_forwarded()
         assert_messages(
             &mut node_rx,
             vec![
@@ -1029,6 +1070,7 @@ pub mod tests {
         for _ in 0..(3 * timeout) {
             assert_node(&mut node).is_follower().term(3).leader(Some(2));
             node = node.tick()?;
+            // 在 step 的is_leader()函数中重置 heartbeats
             node = node.step(Message {
                 from: Address::Node(2),
                 to: Address::Node(1),

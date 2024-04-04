@@ -240,6 +240,7 @@ impl Log {
             std::fs::create_dir_all(dir)?
         }
         let file = std::fs::OpenOptions::new().read(true).write(true).create(true).open(&path)?;
+        // Locks the file for shared usage, or returns a an error if the file is currently locked
         file.try_lock_exclusive()?;
         Ok(Self { path, file })
     }

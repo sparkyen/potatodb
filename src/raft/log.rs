@@ -257,11 +257,15 @@ impl Log {
 
         // Write any entries not already in the log.
         for e in entries {
+            // Sets a value for a key, replacing the existing value if any.
+            // 同样的 index 就替代 ，更大的 index 就删除
             self.engine
                 .set(&Key::Entry(e.index).encode()?, bincode::serialize(&(&e.term, &e.command))?)?;
         }
 
         // Remove the remaining tail of the old log, if any, and update the index.
+        // ..= 运算符表示一个闭区间（inclusive range），即范围包括两端的值；
+        // 而 .. 运算符则表示一个开区间（exclusive range），范围包括左边界但不包括右边界。
         for index in (last_index + 1)..=self.last_index {
             self.engine.delete(&Key::Entry(index).encode()?)?;
         }

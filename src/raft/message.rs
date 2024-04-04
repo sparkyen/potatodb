@@ -61,6 +61,7 @@ pub enum Event {
     },
 
     /// Candidates solicit votes from all peers when campaigning for leadership.
+    /// Solict是请求的意思
     SolicitVote {
         // The index of the candidate's last stored log entry
         last_index: Index,
@@ -70,6 +71,7 @@ pub enum Event {
 
     /// Followers may grant a single vote to a candidate per term, on a
     /// first-come basis. Candidates implicitly vote for themselves.
+    /// Grant是同意的意思
     GrantVote,
 
     /// Leaders replicate log entries to followers by appending it to their log.

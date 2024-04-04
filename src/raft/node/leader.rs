@@ -111,6 +111,7 @@ impl RawNode<Leader> {
                 if last_index > progress.last {
                     progress.last = last_index;
                     progress.next = last_index + 1;
+                    println!("maybe_commit invoked");
                     self.maybe_commit()?;
                 }
             }
@@ -149,6 +150,7 @@ impl RawNode<Leader> {
                 self.heartbeat()?;
             }
 
+            // Mutate 是变化的意思
             Event::ClientRequest { id, request: Request::Mutate(command) } => {
                 let index = self.propose(Some(command))?;
                 self.state_tx.send(Instruction::Notify { id, address: msg.from, index })?;
@@ -511,6 +513,8 @@ mod tests {
 
     #[test]
     // AcceptEntries quorum for entry in past term should not trigger commit
+    // 原因在于 index为3的日志是term为2的leader写入的，而目前term为3
+    // 而且 We can only safely commit up to an entry from our own term 
     fn step_acceptentries_past_term() -> Result<()> {
         let (leader, mut node_rx, mut state_rx) = setup()?;
         let peers = leader.peers.clone();

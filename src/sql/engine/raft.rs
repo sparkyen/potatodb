@@ -330,6 +330,7 @@ impl<E: storage::engine::Engine> State<E> {
     }
 }
 
+/// 在 Rust 中，为一个 struct 实现了 trait，就意味着该 struct 拥有了这个 trait 定义的特性
 impl<E: storage::engine::Engine> raft::State for State<E> {
     fn get_applied_index(&self) -> u64 {
         self.applied_index
