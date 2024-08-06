@@ -532,9 +532,14 @@ impl<E: Engine> Transaction<E> {
         )
         .encode()?;
         let to = Key::Version(key.into(), u64::MAX).encode()?;
+        // 这里选择了 last()，即最后一个键值对作为最新版本
         if let Some((key, _)) = session.scan(from..=to).last().transpose()? {
             match Key::decode(&key)? {
                 Key::Version(_, version) => {
+                    // (If two txns update the same object, then first writer wins.)
+                    // 这个属于write-write冲突
+                    // 本质上在active_set中和>version的事务在整体看来都和当前事务是并发执行
+                    // 若不像括号中这么做，最简单的例子就是会出现Lost update问题
                     if !self.st.is_visible(version) {
                         return Err(Error::Serialization);
                     }
@@ -553,10 +558,13 @@ impl<E: Engine> Transaction<E> {
     }
 
     /// Fetches a key's value, or None if it does not exist.
+    /// is_visible 可以避免：
+    /// 1. 读取其他未提交的事务的数据，若之后对应事务回滚会造成脏读
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut session = self.engine.lock()?;
         let from = Key::Version(key.into(), 0).encode()?;
         let to = Key::Version(key.into(), self.st.version).encode()?;
+        // 通过 rev() 方法将其反转
         let mut scan = session.scan(from..=to).rev();
         while let Some((key, value)) = scan.next().transpose()? {
             match Key::decode(&key)? {
@@ -1749,6 +1757,28 @@ pub mod tests {
 
         let t2 = mvcc.begin()?;
         assert_eq!(t2.set(b"key", vec![2]), Err(Error::Serialization));
+
+        Ok(())
+    }
+
+    #[test]
+    // A dirty write is when t2 overwrites an uncommitted value written by t1.
+    // Snapshot isolation prevents this.
+    fn mytest() -> Result<()> {
+        let mut mvcc = Schedule::new("none")?;
+        mvcc.setup(vec![(b"x", 1, Some(&[1])),(b"y", 1, Some(&[2]))])?;
+        let t1 = mvcc.begin()?;
+        t1.set(b"x", vec![1])?;
+
+        let t2 = mvcc.begin()?;
+        t2.set(b"y", vec![2])?;
+        // t1.set(b"y", vec![1])?;
+        t2.set(b"x", vec![2])?;
+        // t1.rollback()?;
+        // assert_eq!(t2.get(b"key")?, Some(vec![2]));
+        // let t3 = mvcc.begin()?;
+        // assert_eq!(t3.get(b"key")?, Some(vec![88]));
+        // assert_eq!(t2.set(b"key", vec![2]), Err(Error::Serialization));
 
         Ok(())
     }

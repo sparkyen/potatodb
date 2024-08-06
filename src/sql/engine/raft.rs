@@ -340,6 +340,7 @@ impl<E: storage::engine::Engine> raft::State for State<E> {
         assert_eq!(entry.index, self.applied_index + 1, "entry index not after applied index");
 
         let result = match &entry.command {
+            // self.mutate 会执行对应的函数, 在 Impl Satate {...} 中就有
             Some(command) => match self.mutate(bincode::deserialize(command)?) {
                 error @ Err(Error::Internal(_)) => return error, // don't record as applied
                 result => result,

@@ -148,6 +148,7 @@ impl<E: storage::engine::Engine> super::Transaction for Transaction<E> {
         // Update indexes
         for (i, column) in table.columns.iter().enumerate().filter(|(_, c)| c.index) {
             let mut index = self.index_load(&table.name, &column.name, &row[i])?;
+            // 这里存储的是Primary key
             index.insert(id.clone());
             self.index_save(&table.name, &column.name, &row[i], index)?;
         }

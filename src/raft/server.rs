@@ -45,17 +45,24 @@ impl Server {
         listener: TcpListener,
         client_rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<Result<Response>>)>,
     ) -> Result<()> {
+        // mpsc 代表 multi-producer, single-consumer
         let (tcp_in_tx, tcp_in_rx) = mpsc::unbounded_channel::<Message>();
         let (tcp_out_tx, tcp_out_rx) = mpsc::unbounded_channel::<Message>();
         let (task, tcp_receiver) = Self::tcp_receive(listener, tcp_in_tx).remote_handle();
         tokio::spawn(task);
         let (task, tcp_sender) = Self::tcp_send(self.peers, tcp_out_rx).remote_handle();
         tokio::spawn(task);
+        // 从 tcp_in_tx 收取多个节点发过来的消息，然后我们从通道的另外一端 tcp_in_rx 读取给当前节点处理即可
+        // 节点处理完的信息都丢到 tcp_out_tx 中，然后我们通过读取通道另外一端 tcp_out_rx 将反馈发送出去
+        // tcp_in_tx -> tcp_in_rx -> eventloop -> tcp_out_tx -> tcp_out_rx
+        // 我认为的好处：通道具有缓冲能力
         let (task, eventloop) =
             Self::eventloop(self.node, self.node_rx, client_rx, tcp_in_rx, tcp_out_tx)
                 .remote_handle();
         tokio::spawn(task);
 
+        // 同时等待三个异步任务的完成
+        // 其中任何一个异步任务返回了 Err，整个表达式的结果会是 Err，并且会立即返回
         tokio::try_join!(tcp_receiver, tcp_sender, eventloop)?;
         Ok(())
     }
@@ -78,8 +85,10 @@ impl Server {
             tokio::select! {
                 _ = ticker.tick() => node = node.tick()?,
 
+                // 收到了从别的节点发过来的信息
                 Some(msg) = tcp_rx.next() => node = node.step(msg)?,
-
+                
+                // self.node_tx.send(msg)? -> 需要往外界发送信息时
                 Some(msg) = node_rx.next() => {
                     match msg {
                         Message{to: Address::Node(_), ..} => tcp_tx.send(msg)?,
@@ -95,6 +104,7 @@ impl Server {
                     }
                 }
 
+                // 收到了从 Client 发过来的信息
                 Some((request, response_tx)) = client_rx.next() => {
                     let id = Uuid::new_v4().as_bytes().to_vec();
                     let msg = Message{

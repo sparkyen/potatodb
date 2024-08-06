@@ -111,7 +111,7 @@ impl RawNode<Leader> {
                 if last_index > progress.last {
                     progress.last = last_index;
                     progress.next = last_index + 1;
-                    println!("maybe_commit invoked");
+                    // println!("maybe_commit invoked");
                     self.maybe_commit()?;
                 }
             }
@@ -142,6 +142,8 @@ impl RawNode<Leader> {
                     index: commit_index,
                     quorum: self.quorum_size(),
                 })?;
+                // 以下的代码是为了确保Cliet 在Query的节点是leader
+                // 顺便说一句，follower收到来自Client的Request请求后会转发到leader
                 self.state_tx.send(Instruction::Vote {
                     term: self.term,
                     index: commit_index,
@@ -155,6 +157,10 @@ impl RawNode<Leader> {
                 let index = self.propose(Some(command))?;
                 self.state_tx.send(Instruction::Notify { id, address: msg.from, index })?;
                 if self.peers.is_empty() {
+                    // 1. 在peers不为空时
+                    // 尝试在其他peer接受proposal时候(即leader收到Event::AcceptEntries)就尝试进行commit & 状态机的apply
+                    // 2. peer为空时
+                    // 对自己进行commit & 状态机的apply
                     self.maybe_commit()?;
                 }
             }
@@ -264,6 +270,7 @@ impl RawNode<Leader> {
             self.log.commit(commit_index)?;
             // TODO: Move application elsewhere, but needs access to applied index.
             let mut scan = self.log.scan((prev_commit_index + 1)..=commit_index)?;
+            // 这里的指令是一条一条发送的
             while let Some(entry) = scan.next().transpose()? {
                 self.state_tx.send(Instruction::Apply { entry })?;
             }

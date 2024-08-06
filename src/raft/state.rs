@@ -118,6 +118,7 @@ impl Driver {
     pub fn apply(&mut self, state: &mut dyn State, entry: Entry) -> Result<Index> {
         // Apply the command.
         debug!("Applying {:?}", entry);
+        // state.apply 会真正去 engine 里面执行 entry 对应的 sql 语句
         match state.apply(entry) {
             Err(error @ Error::Internal(_)) => return Err(error),
             result => self.notify_applied(state.get_applied_index(), result)?,
